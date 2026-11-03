@@ -50,6 +50,8 @@ body.nocursor{cursor:none}
     <button class="t" id="bair">ON AIR</button>
     <span id="sync">Local</span>
     <button class="t" id="brem">Télécommande</button>
+    <button class="t" id="bch">Canal</button>
+    <button class="t" id="blink">Copier le lien télécommande</button>
     <button class="t" id="bkey">Touche ON AIR : Espace</button>
     <button class="t" id="brot">Paysage</button>
     <label class="t2">Taille <input type="range" id="zoom" min="50" max="100"></label>
@@ -173,22 +175,48 @@ function showCursor(){document.body.classList.remove("nocursor");clearTimeout(ct
 // Le panneau n'apparaît qu'au clic/toucher (jamais au clavier)
 document.addEventListener("pointerdown",wake);
 document.addEventListener("mousemove",showCursor);
-// Synchronisation ON AIR via le relais (HorlogeStudio.exe) : /api/state, /api/on, /api/off
-let lock=0;
+// Synchronisation ON AIR via ntfy.sh : aucun compte, aucun serveur à toi. Le "canal" sert de mot de passe.
+let lock=0,es=null;
 const setSync=t=>$("sync").textContent=t;
-async function api(a){
-  if(a==="state"&&Date.now()<lock)return;
+const qs=new URLSearchParams(location.search);
+let CH=qs.get("canal")||S.canal||"";
+const SRV=(qs.get("srv")||S.srv||"https://ntfy.sh").replace(/\/$/,"");
+if(qs.get("canal")){S.canal=CH;save()}
+const url=()=>SRV+"/"+encodeURIComponent(CH);
+function parse(line){try{const m=JSON.parse(line);if(m.event==="message"&&/^onair:[01]$/.test(m.message))return m.message.endsWith("1")}catch(e){}return null}
+function setRemote(v){if(Date.now()>lock&&v!==air){air=v;apply()}}
+async function resync(){
+  if(!CH)return;
   try{
-    const r=await fetch("/api/"+a+location.search,{cache:"no-store"});
-    if(!r.ok)throw 0;
-    const d=await r.json();
-    if(a==="state"&&Date.now()<lock)return;
-    setSync("🔗 Synchronisé");
-    if(d.on!==air){air=d.on;apply()}
-  }catch(e){setSync(location.protocol==="file:"?"Local (hors relais)":"Relais injoignable")}
+    const r=await fetch(url()+"/json?poll=1&since=12h",{cache:"no-store"});
+    let last=false;(await r.text()).split("\n").forEach(l=>{const v=parse(l);if(v!==null)last=v});
+    setSync("🔗 Synchronisé · "+CH);setRemote(last);
+  }catch(e){setSync("Relais injoignable")}
 }
-function toggleAir(){const v=!air;air=v;apply();lock=Date.now()+900;api(v?"on":"off")}
-setInterval(()=>api("state"),400);api("state");
+function connect(){
+  if(es){es.close();es=null}
+  if(!CH){setSync("Local · choisis un canal");return}
+  try{es=new EventSource(url()+"/sse");
+    es.onmessage=ev=>{const v=parse(ev.data);if(v!==null)setRemote(v)};
+    es.onopen=()=>setSync("🔗 Synchronisé · "+CH);
+    es.onerror=()=>setSync("Reconnexion…");}catch(e){}
+  resync();
+}
+function toggleAir(){
+  const v=!air;air=v;apply();lock=Date.now()+900;
+  if(CH)fetch(url(),{method:"POST",body:"onair:"+(v?1:0)}).catch(()=>setSync("Envoi impossible"));
+}
+$("bch").onclick=()=>{
+  const d=CH||("studio-"+Math.random().toString(36).slice(2,10)+Math.random().toString(36).slice(2,8));
+  const v=prompt("Nom du canal de synchro (identique sur tous les appareils ; un nom long et secret sert de mot de passe) :",d);
+  if(v!==null){CH=v.trim();S.canal=CH;save();connect()}
+};
+$("blink").onclick=()=>{
+  if(!CH){$("bch").click();if(!CH)return}
+  const l=location.origin+location.pathname+"?canal="+encodeURIComponent(CH)+"#remote";
+  try{navigator.clipboard.writeText(l);setSync("Lien copié")}catch(e){prompt("Lien de la télécommande :",l)}
+};
+connect();setInterval(resync,20000);
 // Télécommande plein écran (tablette, Steam Deck) : adresse de la page + #remote
 const rem=$("rem");
 const showRem=()=>rem.classList.toggle("show",location.hash==="#remote");
