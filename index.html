@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Horloge de studio</title>
+<style>
+:root{--c:#ff1a1a;box-sizing:border-box}
+html,body{height:100%;margin:0;background:#000;color:#ccc;font-family:system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden}
+#clock{position:fixed;left:0;top:0;width:100vw;height:100vh;transform-origin:top left}
+#clock.r90{width:100vh;height:100vw;transform:translateX(100vw) rotate(90deg)}
+#clock.r270{width:100vh;height:100vw;transform:translateY(100vh) rotate(-90deg)}
+svg{display:block;width:100%;height:100%}
+#svgwrap{position:absolute;inset:0;transform:scale(var(--z,1))}
+.glow{filter:drop-shadow(0 0 6px var(--c))}
+.seg{fill:var(--c)}
+.off{opacity:.07}
+#band{fill:#1a0000;stroke:#450000;stroke-width:2}
+#bandt{fill:#4a0000}
+#clock.air #band{fill:#e00;stroke:#ff6a6a;filter:drop-shadow(0 0 14px #f00)}
+#clock.air #bandt{fill:#fff}
+#panel{position:absolute;left:0;right:0;bottom:0;padding:12px;background:rgba(20,20,20,.93);display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;transition:opacity .4s}
+#panel.hide{opacity:0;pointer-events:none}
+.sw{width:28px;height:28px;border-radius:50%;border:2px solid #444;cursor:pointer;padding:0}
+.sw.on{border-color:#fff}
+button.t{background:#222;color:#ddd;border:1px solid #444;border-radius:8px;padding:7px 11px;font-size:14px;cursor:pointer}
+button.t.on{background:#fff;color:#000}
+button.t.wait{background:#e00;color:#fff}
+label.t2{color:#ddd;font-size:14px;display:flex;align-items:center;gap:6px}
+select.t{max-width:260px}
+#sync{color:#aaa;font-size:13px}
+#rem{position:fixed;inset:0;background:#000;display:none;flex-direction:column;align-items:center;justify-content:center;gap:24px;z-index:5}
+#rem.show{display:flex}
+#rbtn{width:min(86vw,720px);height:min(55vh,320px);font-size:min(15vw,96px);font-weight:800;letter-spacing:.08em;border-radius:24px;border:3px solid #450000;background:#1a0000;color:#4a0000;cursor:pointer;font-family:Arial,sans-serif}
+#rbtn.on{background:#e00;color:#fff;border-color:#f66;box-shadow:0 0 60px #f00}
+input[type=color]{width:36px;height:30px;border:none;background:none;padding:0}
+body.nocursor{cursor:none}
+</style>
+</head>
+<body>
+<div id="clock">
+  <div id="svgwrap"><svg id="svg" viewBox="0 0 400 500" preserveAspectRatio="xMidYMid meet"></svg></div>
+  <div id="panel">
+    <span id="sws"></span>
+    <input type="color" id="pick" value="#ff1a1a" aria-label="Couleur personnalisée">
+    <button class="t" id="b24">24 h</button>
+    <button class="t" id="bsec">Secondes</button>
+    <button class="t" id="bdate">Date</button>
+    <button class="t" id="bglow">Halo</button>
+    <button class="t" id="bair">ON AIR</button>
+    <span id="sync">Local</span>
+    <button class="t" id="brem">Télécommande</button>
+    <button class="t" id="bkey">Touche ON AIR : Espace</button>
+    <button class="t" id="brot">Paysage</button>
+    <label class="t2">Taille <input type="range" id="zoom" min="50" max="100"></label>
+    <select class="t" id="scr" aria-label="Écran d'affichage"><option value="cur">Écran actuel</option><option value="detect">🖥 Détecter les écrans…</option></select>
+    <button class="t" id="bfs">Plein écran</button>
+  </div>
+</div>
+<div id="rem"><button id="rbtn" tabindex="-1">ON AIR</button><button class="t" id="rback">← Retour à l'horloge</button></div>
+<script>
+const NS="http://www.w3.org/2000/svg";
+const svg=document.getElementById("svg"),clock=document.getElementById("clock"),panel=document.getElementById("panel");
+const S={color:"#ff1a1a",h24:true,sec:true,date:true,glow:true,zoom:1,rot:0,key:{code:"Space",label:"Espace"}};
+try{Object.assign(S,JSON.parse(localStorage.getItem("hs2")||"{}"))}catch(e){}
+const save=()=>{try{localStorage.setItem("hs2",JSON.stringify(S))}catch(e){}};
+let PAR=svg,air=false,assigning=false;
+const el=(n,a,p)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);(p||PAR).appendChild(e);return e};
+
+// Bandeau ON AIR au-dessus de l'horloge
+el("rect",{id:"band",x:10,y:8,width:380,height:84,rx:12});
+el("text",{id:"bandt",x:200,y:67,"text-anchor":"middle","font-size":58,"font-weight":800,"letter-spacing":6,"font-family":"Arial,Helvetica,sans-serif"}).textContent="ON AIR";
+// Horloge
+const G=el("g",{transform:"translate(0 100)"});PAR=G;
+
+const SEG={a:[5,0,30,7],b:[33,4,7,30],c:[33,38,7,30],d:[5,65,30,7],e:[0,38,7,30],f:[0,4,7,30],g:[5,32.5,30,7]};
+const MAP=["abcdef","bc","abdeg","abcdg","bcfg","acdfg","acdefg","abc","abcdefg","abcdfg"];
+function digit(x,y,s){
+  const g=el("g",{transform:`translate(${x} ${y}) scale(${s}) skewX(-6)`});
+  const o={};
+  for(const k in SEG){const r=SEG[k];o[k]=el("rect",{x:r[0],y:r[1],width:r[2],height:r[3],rx:2,class:"seg off"},g)}
+  return {set(n){const on=MAP[n];for(const k in o)o[k].setAttribute("class","seg"+(on.includes(k)?"":" off"))},g};
+}
+const dots=[];
+for(let i=0;i<60;i++){
+  const a=i*Math.PI/30-Math.PI/2,big=i%5===0;
+  dots.push(el("circle",{cx:200+175*Math.cos(a),cy:200+175*Math.sin(a),r:big?5:3.6,class:"seg off"}));
+}
+const H=[digit(50,140,1.5),digit(120,140,1.5)],M=[digit(220,140,1.5),digit(290,140,1.5)],sc=[digit(166,265,.8),digit(202,265,.8)];
+const colon=[el("circle",{cx:200,cy:175,r:5,class:"seg"}),el("circle",{cx:200,cy:215,r:5,class:"seg"})];
+const dateT=el("text",{x:200,y:112,"text-anchor":"middle","font-size":15,"letter-spacing":2,class:"seg"});
+
+function tick(){
+  const d=new Date();let h=d.getHours();const m=d.getMinutes(),s=d.getSeconds();
+  if(!S.h24)h=h%12||12;
+  H[0].set(Math.floor(h/10));H[1].set(h%10);
+  H[0].g.style.opacity=(!S.h24&&h<10)?0:1;
+  M[0].set(Math.floor(m/10));M[1].set(m%10);
+  sc[0].set(Math.floor(s/10));sc[1].set(s%10);
+  colon.forEach(c=>c.style.opacity=d.getMilliseconds()<500?1:.15);
+  dots.forEach((c,i)=>c.setAttribute("class","seg"+(i<=s?"":" off")));
+  dateT.textContent=d.toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"}).toUpperCase();
+}
+const $=id=>document.getElementById(id);
+const ROT=["Paysage","Portrait ↻","Portrait ↺"],RC=["","r90","r270"];
+function apply(){
+  document.documentElement.style.setProperty("--c",S.color);
+  G.classList.toggle("glow",S.glow);
+  sc.forEach(x=>x.g.style.display=S.sec?"":"none");
+  dateT.style.display=S.date?"":"none";
+  clock.classList.toggle("air",air);
+  clock.className=RC[S.rot]+(air?" air":"");$("rbtn").classList.toggle("on",air);
+  $("svgwrap").style.setProperty("--z",S.zoom);$("zoom").value=Math.round(S.zoom*100);
+  $("pick").value=S.color;
+  [["b24",S.h24],["bsec",S.sec],["bdate",S.date],["bglow",S.glow],["bair",air]].forEach(([i,v])=>$(i).classList.toggle("on",v));
+  $("b24").textContent=S.h24?"24 h":"12 h";
+  $("brot").textContent=ROT[S.rot]+" (P)";
+  $("bkey").textContent=assigning?"Appuie sur une touche…":"Touche ON AIR : "+S.key.label;
+  $("bkey").classList.toggle("wait",assigning);
+  document.querySelectorAll(".sw").forEach(b=>b.classList.toggle("on",b.dataset.c===S.color));
+  save();tick();
+}
+[["#ff1a1a","Rouge"],["#ff8a00","Ambre"],["#ffd400","Jaune"],["#1aff3c","Vert"],["#00e5ff","Cyan"],["#3a7bff","Bleu"],["#ff3df0","Rose"],["#ffffff","Blanc"]].forEach(([c,n])=>{
+  const b=document.createElement("button");b.className="sw";b.style.background=c;b.dataset.c=c;b.title=n;b.setAttribute("aria-label",n);
+  b.onclick=()=>{S.color=c;apply()};$("sws").appendChild(b);
+});
+$("pick").oninput=e=>{S.color=e.target.value;apply()};
+$("zoom").oninput=e=>{S.zoom=e.target.value/100;apply()};
+const tg=(id,k)=>$(id).onclick=()=>{S[k]=!S[k];apply()};
+tg("b24","h24");tg("bsec","sec");tg("bdate","date");tg("bglow","glow");
+$("bair").onclick=()=>toggleAir();
+$("bkey").onclick=()=>{assigning=true;apply()};
+const rotate=()=>{S.rot=(S.rot+1)%3;apply()};
+$("brot").onclick=rotate;
+const fs=()=>{try{document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}catch(e){}};
+$("bfs").onclick=fs;
+panel.addEventListener("click",e=>{if(e.target.blur&&e.target.id!=="scr")e.target.blur()});
+
+// Choix de l'écran (API Window Management : Edge/Chrome, autorisation demandée)
+let det=null;const scr=$("scr");
+async function goScreen(i){
+  try{
+    if(document.fullscreenElement)await document.exitFullscreen();
+    await document.documentElement.requestFullscreen({screen:det.screens[i]});
+  }catch(e){scr.options[0].textContent="Écran non utilisable"}
+}
+scr.onchange=async()=>{
+  const v=scr.value;
+  if(v==="detect"){
+    try{
+      det=await window.getScreenDetails();
+      scr.innerHTML="";
+      det.screens.forEach((s,i)=>{const o=document.createElement("option");o.value=i;o.textContent=(s.label||"Écran "+(i+1))+" – "+s.width+"×"+s.height+(s.isPrimary?" (principal)":"");scr.appendChild(o)});
+      const r=document.createElement("option");r.value="detect";r.textContent="↻ Redétecter";scr.appendChild(r);
+      const cur=det.screens.indexOf(det.currentScreen);scr.value=cur>=0?cur:0;
+    }catch(e){scr.options[0].textContent="Détection impossible (Chrome requis)";scr.value="cur"}
+  }else if(det&&v!=="cur")goScreen(+v);
+  scr.blur();
+};
+
+const lab=e=>e.code==="Space"?"Espace":/^Key[A-Z]$/.test(e.code)?e.code.slice(3):/^Digit\d$/.test(e.code)?e.code.slice(5):e.key.length===1?e.key.toUpperCase():e.key;
+document.addEventListener("keydown",e=>{
+  if(assigning){e.preventDefault();if(e.code!=="Escape")S.key={code:e.code,label:lab(e)};assigning=false;apply();return}
+  if(e.code===S.key.code){e.preventDefault();if(!e.repeat)toggleAir();return}
+  if(e.code==="KeyP"&&!e.repeat)rotate();
+  if(e.code==="KeyF"&&!e.repeat)fs();
+});
+document.addEventListener("keyup",e=>{if(e.code===S.key.code)e.preventDefault()});
+
+let to,cto;
+function wake(){panel.classList.remove("hide");clearTimeout(to);to=setTimeout(()=>{if(assigning||document.activeElement===scr)return wake();panel.classList.add("hide")},4000)}
+function showCursor(){document.body.classList.remove("nocursor");clearTimeout(cto);cto=setTimeout(()=>document.body.classList.add("nocursor"),3000)}
+// Le panneau n'apparaît qu'au clic/toucher (jamais au clavier)
+document.addEventListener("pointerdown",wake);
+document.addEventListener("mousemove",showCursor);
+// Synchronisation ON AIR via le relais (HorlogeStudio.exe) : /api/state, /api/on, /api/off
+let lock=0;
+const setSync=t=>$("sync").textContent=t;
+async function api(a){
+  if(a==="state"&&Date.now()<lock)return;
+  try{
+    const r=await fetch("/api/"+a+location.search,{cache:"no-store"});
+    if(!r.ok)throw 0;
+    const d=await r.json();
+    if(a==="state"&&Date.now()<lock)return;
+    setSync("🔗 Synchronisé");
+    if(d.on!==air){air=d.on;apply()}
+  }catch(e){setSync(location.protocol==="file:"?"Local (hors relais)":"Relais injoignable")}
+}
+function toggleAir(){const v=!air;air=v;apply();lock=Date.now()+900;api(v?"on":"off")}
+setInterval(()=>api("state"),400);api("state");
+// Télécommande plein écran (tablette, Steam Deck) : adresse de la page + #remote
+const rem=$("rem");
+const showRem=()=>rem.classList.toggle("show",location.hash==="#remote");
+window.addEventListener("hashchange",showRem);showRem();
+$("brem").onclick=()=>{location.hash="remote"};
+$("rback").onclick=()=>{location.hash=""};
+$("rbtn").onclick=()=>{toggleAir();$("rbtn").blur()};
+panel.classList.add("hide");apply();showCursor();setInterval(tick,100);
+</script>
+</body>
+</html>
