@@ -50,7 +50,6 @@ body.nocursor{cursor:none}
     <button class="t" id="bair">ON AIR</button>
     <span id="sync">Local</span>
     <button class="t" id="brem">Télécommande</button>
-    <button class="t" id="bch">Canal</button>
     <button class="t" id="blink">Copier le lien télécommande</button>
     <button class="t" id="bkey">Touche ON AIR : Espace</button>
     <button class="t" id="brot">Paysage</button>
@@ -179,9 +178,9 @@ document.addEventListener("mousemove",showCursor);
 let lock=0,es=null;
 const setSync=t=>$("sync").textContent=t;
 const qs=new URLSearchParams(location.search);
-let CH=qs.get("canal")||S.canal||"";
+// Canal unique intégré : identique sur tous les appareils (sert de mot de passe, ne le partage pas).
+const CH="studio-beab37d70e509eaf15b1";
 const SRV=(qs.get("srv")||S.srv||"https://ntfy.sh").replace(/\/$/,"");
-if(qs.get("canal")){S.canal=CH;save()}
 const url=()=>SRV+"/"+encodeURIComponent(CH);
 function parse(line){try{const m=JSON.parse(line);if(m.event==="message"&&/^onair:[01]$/.test(m.message))return m.message.endsWith("1")}catch(e){}return null}
 function setRemote(v){if(Date.now()>lock&&v!==air){air=v;apply()}}
@@ -190,7 +189,7 @@ async function resync(){
   try{
     const r=await fetch(url()+"/json?poll=1&since=12h",{cache:"no-store"});
     let last=false;(await r.text()).split("\n").forEach(l=>{const v=parse(l);if(v!==null)last=v});
-    setSync("🔗 Synchronisé · "+CH);setRemote(last);
+    setSync("🔗 Synchronisé");setRemote(last);
   }catch(e){setSync("Relais injoignable")}
 }
 function connect(){
@@ -198,7 +197,7 @@ function connect(){
   if(!CH){setSync("Local · choisis un canal");return}
   try{es=new EventSource(url()+"/sse");
     es.onmessage=ev=>{const v=parse(ev.data);if(v!==null)setRemote(v)};
-    es.onopen=()=>setSync("🔗 Synchronisé · "+CH);
+    es.onopen=()=>setSync("🔗 Synchronisé");
     es.onerror=()=>setSync("Reconnexion…");}catch(e){}
   resync();
 }
@@ -206,14 +205,8 @@ function toggleAir(){
   const v=!air;air=v;apply();lock=Date.now()+900;
   if(CH)fetch(url(),{method:"POST",body:"onair:"+(v?1:0)}).catch(()=>setSync("Envoi impossible"));
 }
-$("bch").onclick=()=>{
-  const d=CH||("studio-"+Math.random().toString(36).slice(2,10)+Math.random().toString(36).slice(2,8));
-  const v=prompt("Nom du canal de synchro (identique sur tous les appareils ; un nom long et secret sert de mot de passe) :",d);
-  if(v!==null){CH=v.trim();S.canal=CH;save();connect()}
-};
 $("blink").onclick=()=>{
-  if(!CH){$("bch").click();if(!CH)return}
-  const l=location.origin+location.pathname+"?canal="+encodeURIComponent(CH)+"#remote";
+  const l=location.origin+location.pathname+"#remote";
   try{navigator.clipboard.writeText(l);setSync("Lien copié")}catch(e){prompt("Lien de la télécommande :",l)}
 };
 connect();setInterval(resync,20000);

@@ -8,7 +8,9 @@ Page unique (`index.html`), sans serveur ni compte. À héberger gratuitement av
 3. L'adresse sera `https://TON-PSEUDO.github.io/NOM-DU-DEPOT/`.
 
 ## ON AIR synchronisé
-- Clique sur la page pour afficher le menu, puis « Canal » : choisis un nom long et secret (il sert de mot de passe).
-- « Copier le lien télécommande » donne une adresse `?canal=...#remote` à ouvrir sur la tablette ou le Steam Deck (gros bouton ON AIR).
-- Touche Espace = ON AIR (réattribuable via le bouton « Touche ON AIR » du menu), P = orientation, F = plein écran.
+- Le canal de synchro est intégré dans le code (`const CH`) : toutes les copies de la page partagent le même ON AIR, sans rien régler.
+- Canal actuel : `studio-beab37d70e509eaf15b1`. Pour en changer, modifie cette ligne dans `index.html`.
+- Attention : si le dépôt est public, le canal est lisible par tous, donc n'importe qui peut commander ton ON AIR. Garde un dépôt privé ou change de canal si besoin.
+- Adresse de la télécommande (tablette, Steam Deck) : l'adresse de la page suivie de `#remote`. Le bouton « Copier le lien télécommande » du menu la copie.
+- Touche Espace = ON AIR (réattribuable via le menu), P = orientation, F = plein écran.
 - Le service utilisé est ntfy.sh (gratuit, sans compte). Il garde l'état 12 h. Pour ton propre serveur ntfy, ajoute `?srv=https://ton-serveur` à l'adresse.
